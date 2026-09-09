@@ -219,7 +219,7 @@ def test_default_behavior_unchanged():
 
 def test_replacement_is_binary_safe():
     script = """
-tio.rx_filter(function(data)
+tio.set_hook(tio.C.HK_IO_RECEIVE, function(data)
     return "X\\0Y"
 end)
 """
@@ -230,7 +230,7 @@ end)
 
 def test_drop_chunk():
     script = """
-tio.rx_filter(function(data)
+tio.set_hook(tio.C.HK_IO_RECEIVE, function(data)
     return nil
 end)
 """
@@ -242,7 +242,7 @@ end)
 def test_callback_error_disables_filter():
     script = """
 local first = true
-tio.rx_filter(function(data)
+tio.set_hook(tio.C.HK_IO_RECEIVE, function(data)
     if first then
         first = false
         error("boom")
@@ -253,7 +253,7 @@ end)
     with TioSession(script, mute=False) as session:
         session.write_serial(b"first")
         output = session.wait_stdout(b"first")
-        assert b"rx_filter failed" in output
+        assert b"hook_filter failed" in output
 
         session.drain_stdout()
         session.write_serial(b"second")
@@ -263,7 +263,7 @@ end)
 
 def test_non_string_return_disables_filter_without_coercion():
     script = """
-tio.rx_filter(function(data)
+tio.set_hook(tio.C.HK_IO_RECEIVE, function(data)
     return 123
 end)
 """
@@ -281,10 +281,10 @@ end)
 
 def test_nil_argument_disables_filter():
     script = """
-tio.rx_filter(function(data)
+tio.set_hook(tio.C.HK_IO_RECEIVE, function(data)
     return "filtered"
 end)
-tio.rx_filter(nil)
+tio.set_hook(tio.C.HK_IO_RECEIVE, nil)
 """
     with TioSession(script) as session:
         session.write_serial(b"raw")
@@ -294,10 +294,10 @@ tio.rx_filter(nil)
 
 def test_new_filter_replaces_old_filter():
     script = """
-tio.rx_filter(function(data)
+tio.set_hook(tio.C.HK_IO_RECEIVE, function(data)
     return "old"
 end)
-tio.rx_filter(function(data)
+tio.set_hook(tio.C.HK_IO_RECEIVE, function(data)
     return "new"
 end)
 """
@@ -310,7 +310,7 @@ end)
 def test_filter_closure_state_persists_across_chunks():
     script = """
 local count = 0
-tio.rx_filter(function(data)
+tio.set_hook(tio.C.HK_IO_RECEIVE, function(data)
     count = count + 1
     return tostring(count) .. ":" .. data
 end)
@@ -326,8 +326,8 @@ end)
 
 def test_self_disabling_filter_uses_current_result_then_turns_off():
     script = """
-tio.rx_filter(function(data)
-    tio.rx_filter(nil)
+tio.set_hook(tio.C.HK_IO_RECEIVE, function(data)
+    tio.set_hook(tio.C.HK_IO_RECEIVE, nil)
     return (data:gsub("raw", "once"))
 end)
 """
@@ -343,7 +343,7 @@ end)
 
 def test_socket_and_log_receive_filtered_output():
     script = """
-tio.rx_filter(function(data)
+tio.set_hook(tio.C.HK_IO_RECEIVE, function(data)
     return (data:gsub("raw", "filtered"))
 end)
 """
