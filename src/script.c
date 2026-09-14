@@ -1122,10 +1122,22 @@ static lua_State *script_interp_new(void)
         return NULL;
     }
 
+    // Stop GC during initialization
+#if LUA_VERSION_NUM >= 504
     lua_gc(L, LUA_GCSTOP);
+#else
+    lua_gc(L, LUA_GCSTOP, 0);
+#endif
+
     luaL_openlibs(L);
+
+    // Restart GC
+#if LUA_VERSION_NUM >= 504
     lua_gc(L, LUA_GCRESTART);
-    lua_gc(L, LUA_GCGEN, 0, 0);
+    lua_gc(L, LUA_GCGEN, 20, 100);
+#else
+    lua_gc(L, LUA_GCRESTART, 0);
+#endif
 
 #if LUA_VERSION_NUM >= 502
     luaL_requiref(L, "tio", luaopen_tio, 1);
