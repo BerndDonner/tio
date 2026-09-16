@@ -1107,17 +1107,13 @@ static void script_gc_stop(lua_State *L)
 #endif
 }
 
+#if LUA_VERSION_NUM >= 502
 static int luaopen_tio(lua_State *L)
 {
-#if LUA_VERSION_NUM >= 502
     luaL_newlib(L, tio_lib);
-#else
-    lua_newtable(L);
-    lua_pushvalue(L, -1);
-    luaL_register(L, NULL, tio_lib);
-#endif
     return 1;
 }
+#endif
 
 static void script_require_tio(lua_State *L)
 {
