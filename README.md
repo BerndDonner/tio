@@ -611,7 +611,7 @@ Note: The meson install steps may differ depending on your specific system.
 Getting permission access errors trying to open your serial device?
 
 Add your user to the group which allows serial device access permanently. For example, to add your user to the 'dialout' group do:
-ppp```bash
+```bash
 sudo usermod -a -G dialout <username>
 ```
 Switch to the "dialout" group, temporary but immediately for this session.
@@ -657,7 +657,7 @@ See the AUTHORS file for full list of contributors.
 
 ## 10. About this fork
 
-<<This section will be moved to NEWS and AUTHORS when merged into the upstreaming repository.>>
+(This section will be moved to NEWS and AUTHORS when merged into the upstreaming repository.)
 
 See the NEWS_THIS_FORK file for full list of additional features.
 
