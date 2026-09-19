@@ -57,7 +57,7 @@ static char script_init[] =
 "    NOWAIT = -1,\n"
 "}\n"
 "tio.clear_screen = function()\n"
-"    io.write('\\x1bc')\n"
+"    io.write(string.format('%cc',0x1b))\n"
 "end\n"
 "tio.set = function(arg)\n"
 "    local dtr = arg.DTR or -1\n"
