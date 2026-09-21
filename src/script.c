@@ -1581,24 +1581,6 @@ static lua_State *script_interp_new(void)
         }
     }
 
-#if defined(LUAJIT_VERSION)
-    // luajit enable
-    lua_getglobal(L, "jit");
-    if (lua_istable(L, -1))
-    {
-        lua_getfield(L, -1, "on");
-        if (lua_isfunction(L, -1))
-        {
-            lua_call(L, 0, 0);
-        }
-        else
-        {
-            lua_pop(L, 1);
-        }
-    }
-    lua_pop(L, 1);
-#endif
-
     // Restart GC
     script_gc_restart(L);
 
