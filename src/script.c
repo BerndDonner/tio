@@ -125,6 +125,8 @@ static char script_init[] =
 "setmetatable(tio, tio)\n";
 // clang-format on
 
+static void script_hook_disable(script_hook_id_t hook_id);
+
 static bool alwaysecho(lua_State *L)
 {
     bool b;
@@ -1085,15 +1087,15 @@ static int api_set_hook(lua_State *L)
 
     if (lua_isnoneornil(L, 2))
     {
-        if (hook->ref != LUA_NOREF)
-        {
-            luaL_unref(L, LUA_REGISTRYINDEX, hook->ref);
-            hook->ref = LUA_NOREF;
-        }
+        // unset hook
+        script_hook_disable(hook_id);
         return 0;
     }
 
     luaL_checktype(L, 2, LUA_TFUNCTION);
+
+    // set hook
+    // note: buffer re-allocation is avoided by reuse
     if (hook->ref != LUA_NOREF)
     {
         luaL_unref(L, LUA_REGISTRYINDEX, hook->ref);
@@ -1110,23 +1112,19 @@ static void script_hook_disable(script_hook_id_t hook_id)
 {
     script_hook_t *hook = &script_hook[hook_id];
 
-    if (script_interp == NULL)
-    {
-        hook->ref = LUA_NOREF;
-        return;
-    }
-
-    if (hook->ref != LUA_NOREF)
+    if (script_interp != NULL && hook->ref != LUA_NOREF)
     {
         luaL_unref(script_interp, LUA_REGISTRYINDEX, hook->ref);
-        if (hook->buffer)
-        {
-            free(hook->buffer);
-        }
-        hook->ref = LUA_NOREF;
-        hook->buffer = NULL;
-        hook->buffer_size = 0;
     }
+
+    if (hook->buffer)
+    {
+        free(hook->buffer);
+        hook->buffer = NULL;
+    }
+
+    hook->ref = LUA_NOREF;
+    hook->buffer_size = 0;
 }
 
 static void script_hook_disable_all(void)
