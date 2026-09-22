@@ -25,7 +25,6 @@
 #include <unistd.h>
 #include <string.h>
 #include <time.h>
-#include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
 #include <sys/ioctl.h>
@@ -54,16 +53,14 @@ static script_hook_t script_hook[SCRIPT_HOOK_ID_NUM];
 
 // clang-format off
 static char script_init[] =
-"if table.unpack == nil then\n"
-"    table.unpack = unpack\n"
-"end\n"
+"table.unpack = table.unpack or unpack\n"
 "tio.C = {\n"
 "    EXPECT_CLEANUP_READ_SIZE = 4096,\n"
 "    WAIT_FOREVER = 0,\n"
 "    NOWAIT = -1,\n"
 "}\n"
 "tio.clear_screen = function()\n"
-"    io.write('\\x1bc')\n"
+"    io.write(string.format('%cc',0x1b))\n"
 "end\n"
 "tio.set = function(arg)\n"
 "    local dtr = arg.DTR or -1\n"
@@ -127,6 +124,8 @@ static char script_init[] =
 "tio.alwaysecho = true\n"
 "setmetatable(tio, tio)\n";
 // clang-format on
+
+static void script_hook_disable(script_hook_id_t hook_id);
 
 static bool alwaysecho(lua_State *L)
 {
@@ -1088,15 +1087,15 @@ static int api_set_hook(lua_State *L)
 
     if (lua_isnoneornil(L, 2))
     {
-        if (hook->ref != LUA_NOREF)
-        {
-            luaL_unref(L, LUA_REGISTRYINDEX, hook->ref);
-            hook->ref = LUA_NOREF;
-        }
+        // unset hook
+        script_hook_disable(hook_id);
         return 0;
     }
 
     luaL_checktype(L, 2, LUA_TFUNCTION);
+
+    // set hook
+    // note: buffer re-allocation is avoided by reuse
     if (hook->ref != LUA_NOREF)
     {
         luaL_unref(L, LUA_REGISTRYINDEX, hook->ref);
@@ -1113,23 +1112,19 @@ static void script_hook_disable(script_hook_id_t hook_id)
 {
     script_hook_t *hook = &script_hook[hook_id];
 
-    if (script_interp == NULL)
-    {
-        hook->ref = LUA_NOREF;
-        return;
-    }
-
-    if (hook->ref != LUA_NOREF)
+    if (script_interp != NULL && hook->ref != LUA_NOREF)
     {
         luaL_unref(script_interp, LUA_REGISTRYINDEX, hook->ref);
-        if (hook->buffer)
-        {
-            free(hook->buffer);
-        }
-        hook->ref = LUA_NOREF;
-        hook->buffer = NULL;
-        hook->buffer_size = 0;
     }
+
+    if (hook->buffer)
+    {
+        free(hook->buffer);
+        hook->buffer = NULL;
+    }
+
+    hook->ref = LUA_NOREF;
+    hook->buffer_size = 0;
 }
 
 static void script_hook_disable_all(void)
@@ -1500,18 +1495,48 @@ static void script_set_consts(lua_State *L)
     lua_pop(L, 2);
 }
 
+static void script_gc_stop(lua_State *L)
+{
+#if LUA_VERSION_NUM >= 504
+    lua_gc(L, LUA_GCSTOP);
+#else
+    lua_gc(L, LUA_GCSTOP, 0);
+#endif
+}
 
+#if LUA_VERSION_NUM >= 502
 static int luaopen_tio(lua_State *L)
 {
-#if LUA_VERSION_NUM >= 502
     luaL_newlib(L, tio_lib);
-#else
-    lua_newtable(L);
-    lua_pushvalue(L, -1);
-    luaL_register(L, NULL, tio_lib);
-#endif
     return 1;
 }
+#endif
+
+static void script_require_tio(lua_State *L)
+{
+#if LUA_VERSION_NUM >= 502
+    luaL_requiref(L, "tio", luaopen_tio, 1);
+#else
+    luaL_register(L, "tio", tio_lib);
+#endif
+    lua_pop(L, 1);
+}
+
+static void script_gc_restart(lua_State *L)
+{
+#if LUA_VERSION_NUM >= 505
+    // Generational GC
+    lua_gc(L, LUA_GCRESTART);
+    lua_gc(L, LUA_GCGEN);
+#elif LUA_VERSION_NUM >= 504
+    lua_gc(L, LUA_GCRESTART);
+    lua_gc(L, LUA_GCGEN, 20, 100);
+#else
+    // Incremental GC
+    lua_gc(L, LUA_GCRESTART, 0);
+#endif
+}
+
 
 static lua_State *script_interp_new(void)
 {
@@ -1520,26 +1545,26 @@ static lua_State *script_interp_new(void)
     if (script_interp != NULL) {
         script_hook_disable_all();
         lua_close(script_interp);
+        script_interp = NULL;
     }
 
     script_hook_init();
 
     L = luaL_newstate();
-    script_interp = L;
-
     if (L == NULL) {
         tio_error_printf("Can't allocate script buffer");
         return NULL;
     }
 
-    lua_gc(L, LUA_GCSTOP, 0);
+    script_interp = L;
+
+    // Stop GC during initialization
+    script_gc_stop(L);
+
     luaL_openlibs(L);
-    lua_gc(L, LUA_GCRESTART, 0);
-#if LUA_VERSION_NUM >= 504
-    lua_gc(L, LUA_GCGEN, 0, 0);
-#endif
-    luaopen_tio(L);
-    lua_setglobal(L, "tio");
+
+    // Equivalent to calling `require("tio")`
+    script_require_tio(L);
 
     // Load lua init script
     script_load(L);
@@ -1556,23 +1581,8 @@ static lua_State *script_interp_new(void)
         }
     }
 
-#if defined(LUAJIT_VERSION)
-    // luajit enable
-    lua_getglobal(L, "jit");
-    if (lua_istable(L, -1))
-    {
-        lua_getfield(L, -1, "on");
-        if (lua_isfunction(L, -1))
-        {
-            lua_call(L, 0, 0);
-        }
-        else
-        {
-            lua_pop(L, 1);
-        }
-    }
-    lua_pop(L, 1);
-#endif
+    // Restart GC
+    script_gc_restart(L);
 
     return L;
 }
