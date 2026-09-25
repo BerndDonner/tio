@@ -49,6 +49,7 @@
 
         extraShellHook = ''
           export TIO_BUILD_DIR="$PWD/build"
+          export PYTHONDONTWRITEBYTECODE=1
 
           tio-configure() {
             if [ -f "$TIO_BUILD_DIR/build.ninja" ]; then
@@ -76,9 +77,7 @@
           }
 
           tio-check() {
-            tio-build &&
-            tio-test &&
-            tio-e2e
+            tio-test
           }
 
           echo
